@@ -1,0 +1,79 @@
+version: "3.9"
+
+services:
+
+  # ─── Databases ───────────────────────────────────────────
+
+  user-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: userdb
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+
+  post-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postdb
+    volumes:
+      - post-db-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # ─── Services ────────────────────────────────────────────
+
+  user-service:
+    build: ./services/user-services
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - DATABASE_URL=postgresql://user:password@user-db:5432/userdb
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - user-db
+      - redis
+
+  post-service:
+    build: ./services/post-services
+    ports:
+      - "8001:8001"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - DATABASE_URL=postgresql://user:password@post-db:5432/postdb
+      - USER_SERVICE_URL=http://user-service:8000
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - post-db
+      - redis
+      - user-service
+
+  feed-service:
+    build: ./services/feed-services
+    ports:
+      - "8002:8002"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - USER_SERVICE_URL=http://user-service:8000
+      - POST_SERVICE_URL=http://post-service:8001
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+      - user-service
+      - post-service
+
+volumes:
+  user-db-data:
+  post-db-data:
