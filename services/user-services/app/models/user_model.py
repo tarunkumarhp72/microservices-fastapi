@@ -27,8 +27,8 @@ class Follower(Base):
     __tablename__ = "followers"
 
     id          = Column(Integer, primary_key=True, index=True)
-    follower_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # ✅
-    followed_id = Column(Integer, ForeignKey("users.id"), nullable=False)  # ✅
+    follower_id = Column(Integer, ForeignKey("users.id"), nullable=False)  
+    followed_id = Column(Integer, ForeignKey("users.id"), nullable=False)  
     created_at  = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
