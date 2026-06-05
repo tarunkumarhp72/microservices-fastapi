@@ -1,53 +1,69 @@
-import requests
-import json
-import redis
-
 import os
-USER_SERVICE_URL = os.environ.get("USER_SERVICE_URL", "http://user-service:8000")
-POST_SERVICE_URL = os.environ.get("POST_SERVICE_URL", "http://post-service:8001")
+import json
+import requests
+from app.cache.redis_client import redis_client
+from dotenv import load_dotenv
+load_dotenv()
 
-
-
-redis_client = redis.Redis(
-    host=os.environ.get("REDIS_HOST", "redis"),
-    port=int(os.environ.get("REDIS_PORT", 6379))
+FOLLOW_SERVICE_URL = os.environ.get(
+    "FOLLOW_SERVICE_URL",
+    "http://follower-microservice:8002"
 )
 
-CACHE_TTL = 300  
+POST_SERVICE_URL = os.environ.get(
+    "POST_SERVICE_URL",
+    "http://post-microservices:8003"
+)
+
+CACHE_TTL = int(os.environ.get("CACHE_TTL", 300))
 
 
-def generate_feed(user_id: int):
+def generate_feed(user_id: int, limit: int = 20, offset: int = 0):
+    cache_key = f"feed:user:{user_id}:limit:{limit}:offset:{offset}"
 
-    cache_key = f"feed:user:{user_id}"
-
+    # ✅ check cache first
     cached_feed = redis_client.get(cache_key)
-
     if cached_feed:
         return json.loads(cached_feed)
 
-
-    response = requests.get(
-        f"{USER_SERVICE_URL}/users/following-ids/{user_id}"
-    )
-
-    following_ids = response.json()
-
-    feed = []
-
-    for followed_user in following_ids:
-
-        post_response = requests.get(
-            f"{POST_SERVICE_URL}/posts/user/{followed_user}"
+    try:
+        response = requests.get(
+            f"{FOLLOW_SERVICE_URL}/follow/{user_id}/following",
+            timeout=3
         )
+        response.raise_for_status()
+        data = response.json()
+        following_ids = data.get("following_ids", [])
+    except Exception as e:
+        print(f"Failed to fetch following list: {e}")
+        return []
 
-        posts = post_response.json()
-        feed.extend(posts)
+    if not following_ids:
+        return []
 
+    
+    try:
+        user_ids_str = ",".join(map(str, following_ids))
+        post_response = requests.get(
+            f"{POST_SERVICE_URL}/posts/bulk",
+            params={
+                "user_ids": user_ids_str,
+                "limit": limit + offset  # fetch enough to paginate
+            },
+            timeout=3
+        )
+        post_response.raise_for_status()
+        feed = post_response.json()
+    except Exception as e:
+        print(f"Failed to fetch posts: {e}")
+        return []
 
     feed.sort(
-        key=lambda x: x["id"],
+        key=lambda x: x.get("created_at", ""),
         reverse=True
     )
+
+    feed = feed[offset: offset + limit]
 
     redis_client.setex(
         cache_key,

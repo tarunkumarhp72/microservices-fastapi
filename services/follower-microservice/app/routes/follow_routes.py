@@ -44,7 +44,7 @@ def unfollow(
 def get_followers(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id)
+    # current_user_id: int = Depends(get_current_user_id)
 ):
     return follower_service.get_followers(db, user_id)
 
@@ -56,6 +56,6 @@ def get_followers(
 def get_following(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id)
+    # current_user_id: int = Depends(get_current_user_id)
 ):
     return follower_service.get_following(db, user_id)

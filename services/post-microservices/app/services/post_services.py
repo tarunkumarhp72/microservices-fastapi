@@ -1,58 +1,72 @@
-from app.models.post_model import Post
-
-from app.redis_client import redis_client
-import requests
 import os
+import requests
+from app.models.post_model import Post
+from app.redis_client import redis_client
+
+FOLLOW_SERVICE_URL = os.environ.get(
+    "FOLLOW_SERVICE_URL",
+    "http://follower-microservice:8003"
+)
 
 
-USER_SERVICE_URL = os.environ.get("USER_SERVICE_URL", "http://user-service:8000")
-POST_SERVICE_URL = os.environ.get("POST_SERVICE_URL", "http://post-service:8001")
+def _invalidate_follower_feeds(user_id: int):
+    """
+    Fetches follower IDs from follow-service
+    and deletes their cached feeds from Redis.
+    Wrapped in try/except so it never blocks the main response.
+    """
+    try:
+        response = requests.get(
+            f"{FOLLOW_SERVICE_URL}/follow/{user_id}/followers",
+            timeout=2  
+        )
+        data = response.json()
+        follower_ids = data.get("follower_ids", [])
+
+        for follower_id in follower_ids:
+            redis_client.delete(f"feed:user:{follower_id}")
+
+    except Exception as e:
+        print(f"Cache invalidation failed: {e}")
 
 
-
-def create_post(post_data, user_id, db):
-
+def create_post(post_data, user_id: int, db):
     post = Post(
         content=post_data.content,
         user_id=user_id
     )
-
     db.add(post)
     db.commit()
     db.refresh(post)
 
-    try:
-        response = requests.get(
-            f"{USER_SERVICE_URL}/users/followers-ids/{user_id}"
-        )
+    _invalidate_follower_feeds(user_id)
 
-        followers = response.json()
-
-        for follower_id in followers:
-            cache_key = f"feed:user:{follower_id}"
-            redis_client.delete(cache_key)
-
-    except Exception as e:
-        print("Cache invalidation failed:", str(e))
     return post
 
-def get_post(post_id, db):
 
-    return db.query(Post).filter(
-        Post.id == post_id
-    ).first()
+def get_post(post_id: int, db):
+    return db.query(Post).filter(Post.id == post_id).first()
 
-def get_user_posts(
-    user_id,
-    db
-):
 
+def get_user_posts(user_id: int, db):
     return db.query(Post).filter(
         Post.user_id == user_id
-    ).all()
+    ).order_by(Post.created_at.desc()).all()
 
-def delete_post(post_id, user_id, db):
 
+def get_posts_by_user_ids(user_ids: list[int], limit: int, db):
+    """
+    Bulk fetch posts for multiple users in ONE query.
+    This fixes the N+1 problem in feed-service.
+    """
+    return db.query(Post).filter(
+        Post.user_id.in_(user_ids)
+    ).order_by(
+        Post.created_at.desc()
+    ).limit(limit).all()
+
+
+def delete_post(post_id: int, user_id: int, db):
     post = db.query(Post).filter(Post.id == post_id).first()
 
     if not post:
@@ -64,18 +78,6 @@ def delete_post(post_id, user_id, db):
     db.delete(post)
     db.commit()
 
-    try:
-        response = requests.get(
-            f"{USER_SERVICE_URL}/users/followers-ids/{user_id}"
-        )
-
-        followers = response.json()
-
-        for follower_id in followers:
-            cache_key = f"feed:user:{follower_id}"
-            redis_client.delete(cache_key)
-
-    except Exception as e:
-        print("Cache invalidation failed:", str(e))
+    _invalidate_follower_feeds(user_id)
 
     return True

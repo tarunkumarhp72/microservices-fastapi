@@ -1,24 +1,22 @@
-from jose import jwt, JWTError
 import os
+from jose import jwt, JWTError
 from dotenv import load_dotenv
 load_dotenv()
 
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY is not set")
 
 
-secret_key_from_env = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
-
-
-def verify_token(token: str):
-
+def decode_token(token: str):
     try:
         payload = jwt.decode(
             token,
-            secret_key_from_env,
+            SECRET_KEY,
             algorithms=[ALGORITHM]
         )
-
         return payload
-
     except JWTError:
         return None
