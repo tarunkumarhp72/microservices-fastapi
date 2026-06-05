@@ -1,7 +1,12 @@
 from jose import jwt, JWTError
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
-SECRET_KEY = "mysecretkey"
-ALGORITHM = "HS256"
+
+
+secret_key_from_env = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
 
 
 def verify_token(token: str):
@@ -9,7 +14,7 @@ def verify_token(token: str):
     try:
         payload = jwt.decode(
             token,
-            SECRET_KEY,
+            secret_key_from_env,
             algorithms=[ALGORITHM]
         )
 

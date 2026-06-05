@@ -2,10 +2,11 @@ from app.models.post_model import Post
 
 from app.redis_client import redis_client
 import requests
+import os
 
 
-
-USER_SERVICE_URL = "http://localhost:8000"
+USER_SERVICE_URL = os.environ.get("USER_SERVICE_URL", "http://user-service:8000")
+POST_SERVICE_URL = os.environ.get("POST_SERVICE_URL", "http://post-service:8001")
 
 
 
@@ -20,7 +21,6 @@ def create_post(post_data, user_id, db):
     db.commit()
     db.refresh(post)
 
-    # 🔥 CACHE INVALIDATION LOGIC (IMPORTANT)
     try:
         response = requests.get(
             f"{USER_SERVICE_URL}/users/followers-ids/{user_id}"
@@ -31,11 +31,9 @@ def create_post(post_data, user_id, db):
         for follower_id in followers:
             cache_key = f"feed:user:{follower_id}"
             redis_client.delete(cache_key)
-            print(f"Cache cleared for user {follower_id}")
 
     except Exception as e:
         print("Cache invalidation failed:", str(e))
-
     return post
 
 def get_post(post_id, db):
@@ -66,7 +64,6 @@ def delete_post(post_id, user_id, db):
     db.delete(post)
     db.commit()
 
-    # 🔥 ALSO INVALIDATE CACHE
     try:
         response = requests.get(
             f"{USER_SERVICE_URL}/users/followers-ids/{user_id}"

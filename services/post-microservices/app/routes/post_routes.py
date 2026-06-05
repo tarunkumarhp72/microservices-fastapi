@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from fastapi import Depends
+from fastapi import Depends,HTTPException, status
 
 from sqlalchemy.orm import Session
 
@@ -38,7 +38,6 @@ def create_new_post(
     )
 
 
-from fastapi import HTTPException
 
 
 @router.get(
