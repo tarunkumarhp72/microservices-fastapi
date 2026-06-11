@@ -1,79 +1,151 @@
-version: "3.9"
-
 services:
-
-  # ─── Databases ───────────────────────────────────────────
 
   user-db:
     image: postgres:15
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: userdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: user_db
     volumes:
       - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   post-db:
     image: postgres:15
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: postdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: posts_db
     volumes:
       - post-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  follow-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: follow_db
+    volumes:
+      - follow-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
-  # ─── Services ────────────────────────────────────────────
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   user-service:
-    build: ./services/user-services
-    ports:
-      - "8000:8000"
-    environment:
-      - SECRET_KEY=${SECRET_KEY}
-      - JWT_ALGORITHM=${JWT_ALGORITHM}
-      - DATABASE_URL=postgresql://user:password@user-db:5432/userdb
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    depends_on:
-      - user-db
-      - redis
-
-  post-service:
-    build: ./services/post-services
+    build: ./services/user-microservices
     ports:
       - "8001:8001"
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - JWT_ALGORITHM=${JWT_ALGORITHM}
-      - DATABASE_URL=postgresql://user:password@post-db:5432/postdb
-      - USER_SERVICE_URL=http://user-service:8000
+      - ALGORITHM=${JWT_ALGORITHM}
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@user-db:5432/user_db
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    
+    volumes:
+      - ./shared_lib:/app/shared_lib:ro
+      - ./logs/user-service:/app/logs
     depends_on:
-      - post-db
-      - redis
-      - user-service
+      user-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-  feed-service:
-    build: ./services/feed-services
+  post-service:
+    build: ./services/post-microservices
+    ports:
+      - "8003:8003"
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@post-db:5432/posts_db
+      - FOLLOW_SERVICE_URL=http://follower-service:8002
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - ./shared_lib:/app/shared_lib:ro
+      - ./logs/post-service:/app/logs
+    depends_on:
+      post-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  follower-service:
+    build: ./services/follower-microservice
     ports:
       - "8002:8002"
     environment:
       - SECRET_KEY=${SECRET_KEY}
-      - USER_SERVICE_URL=http://user-service:8000
-      - POST_SERVICE_URL=http://post-service:8001
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@follow-db:5432/follow_db
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+    volumes:
+      - ./shared_lib:/app/shared_lib:ro
+      - ./logs/follower-service:/app/logs
     depends_on:
-      - redis
+      follow-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  feed-service:
+    build: ./services/feed-microservices
+    ports:
+      - "8004:8004"
+    environment:
+      - FOLLOW_SERVICE_URL=http://follower-service:8002
+      - POST_SERVICE_URL=http://post-service:8003
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CACHE_TTL=300
+    volumes:
+      - ./shared_lib:/app/shared_lib:ro
+      - ./logs/feed-service:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - USER_SERVICE_URL=http://user-service:8001
+      - POST_SERVICE_URL=http://post-service:8003
+      - FOLLOW_SERVICE_URL=http://follower-service:8002
+      - FEED_SERVICE_URL=http://feed-service:8004
+    volumes:
+      - ./shared_lib:/app/shared_lib:ro
+      - ./logs/gateway:/app/logs
+    depends_on:
       - user-service
       - post-service
+      - follower-service
+      - feed-service
 
 volumes:
   user-db-data:
   post-db-data:
+  follow-db-data:

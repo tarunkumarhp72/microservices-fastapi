@@ -46,6 +46,7 @@ def get_followers(
     db: Session = Depends(get_db),
     # current_user_id: int = Depends(get_current_user_id)
 ):
+    print(f"GET /follow/{user_id}/followers called")
     return follower_service.get_followers(db, user_id)
 
 

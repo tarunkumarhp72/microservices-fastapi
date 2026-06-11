@@ -26,7 +26,6 @@ def login_user(login_data, db):
         .filter(User.email == login_data.email)
         .first()
     )
-
     if not user:
         return None
 

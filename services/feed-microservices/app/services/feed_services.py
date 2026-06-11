@@ -21,7 +21,6 @@ CACHE_TTL = int(os.environ.get("CACHE_TTL", 300))
 def generate_feed(user_id: int, limit: int = 20, offset: int = 0):
     cache_key = f"feed:user:{user_id}:limit:{limit}:offset:{offset}"
 
-    # ✅ check cache first
     cached_feed = redis_client.get(cache_key)
     if cached_feed:
         return json.loads(cached_feed)
@@ -48,7 +47,7 @@ def generate_feed(user_id: int, limit: int = 20, offset: int = 0):
             f"{POST_SERVICE_URL}/posts/bulk",
             params={
                 "user_ids": user_ids_str,
-                "limit": limit + offset  # fetch enough to paginate
+                "limit": limit + offset 
             },
             timeout=3
         )

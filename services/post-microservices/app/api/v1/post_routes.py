@@ -27,6 +27,7 @@ def create_new_post(
 def get_bulk_posts(
     user_ids: str = Query(..., description="Comma separated user IDs"),
     limit: int = Query(20, le=100),
+    # current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -45,6 +46,7 @@ def user_posts(
     user_id: int,
     limit: int = Query(20, le=100),
     offset: int = Query(0),
+    # current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     return get_user_posts(user_id, db)
@@ -53,6 +55,7 @@ def user_posts(
 @router.get("/{post_id}", response_model=PostResponse)
 def get_single_post(
     post_id: int,
+    # current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     post = get_post(post_id, db)

@@ -28,7 +28,7 @@ def get_current_user(
             detail="Invalid token type"
         )
     
-    is_blacklisted=redis_client.get(f"blacklisted:{token}")
+    is_blacklisted=redis_client.get(f"blacklist:{token}")
     if is_blacklisted:
         raise HTTPException(
             status_code=401,
