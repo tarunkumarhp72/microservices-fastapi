@@ -56,7 +56,7 @@ ENV PYTHONPATH=/app \
 COPY --from=builder /root/.local /home/app/.local
 
 #  Copy application code
-COPY shared_lib1/shared /app/shared
+COPY shared_lib/shared /app/shared
 COPY gateway/ /app/
 
 #  Switch to non-root user
