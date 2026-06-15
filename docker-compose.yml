@@ -1,79 +1,492 @@
-version: "3.9"
+################################################################################
+# Social Media Feed Microservices - Production Docker Compose Configuration
+################################################################################
+# This configuration sets up a complete microservices architecture with:
+# - 3 PostgreSQL databases (isolated per microservice)
+# - 1 Redis cache server (for session/cache management)
+# - 5 FastAPI microservices (user, post, follower, feed)
+# - 1 API Gateway (entry point for all requests)
+#
+# Key Features:
+# ✓ Auto-restart on failure
+# ✓ Resource limits (prevents one service from crashing others)
+# ✓ Health checks (Docker monitors container health)
+# ✓ Logging with rotation (prevents disk space issues)
+# ✓ Isolated network (secure inter-service communication)
+# ✓ Persistent volumes (data survives container restarts)
+################################################################################
 
 services:
 
-  # ─── Databases ───────────────────────────────────────────
+# ============================================================================
+# DATABASES - Data persistence layer
+# ============================================================================
+# Each microservice gets its own PostgreSQL database for data isolation
+# This follows the microservices pattern of "database per service"
+# All databases are NOT exposed to the internet (no ports in production)
+# ============================================================================
 
-  user-db:
-    image: postgres:15
+  docker-user-db:
+    #  PostgreSQL 15 Alpine: Lightweight Linux image (~180MB vs 900MB full)
+    # Handles user authentication, profiles, and user data
+    image: postgres:15-alpine
+    #   Environment variables for database initialization
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: userdb
+      POSTGRES_USER: postgres             # Default admin user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}   # ⚠️  Must be set in .env file
+      POSTGRES_DB: user_db                # Database created on first run
+    
+    #  Persistent storage: survives container restarts and updates
     volumes:
       - user-db-data:/var/lib/postgresql/data
+    
+    #  Connect to app-network (allows services to communicate)
+    networks:
+      - app-network
+    
+    #  Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    
+    #  Resource management: Prevents runaway processes
+    # Limit: max resources a container can use
+    # Reservation: resources Docker tries to guarantee
+    deploy:
+      resources:
+        limits:
+          cpus: '1'        # Max 1 CPU core
+          memory: 512M     # Max 512MB RAM
+        reservations:
+          cpus: '0.5'      # Try to reserve 0.5 CPU
+          memory: 256M     # Try to reserve 256MB RAM
+    
+    #  Logging configuration with automatic rotation
+    # Prevents logs from consuming all disk space
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"    # Rotate when log reaches 10MB
+        max-file: "3"      # Keep only last 3 log files
+    
+    #  Health check: Docker periodically tests if database is responsive
+    # If failed multiple times, container marked as unhealthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s       # Check every 10 seconds
+      timeout: 5s         # Wait 5s for response
+      retries: 5          # Mark unhealthy after 5 failed checks
 
-  post-db:
-    image: postgres:15
+
+  docker-post-db:
+    #  Database for posts/content storage
+    image: postgres:15-alpine
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: postdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: posts_db
     volumes:
       - post-db-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    #  Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  redis:
+  docker-follow-db:
+    #  Database for follower relationships
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: follow_db
+    volumes:
+      - follow-db-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    #  Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+# ============================================================================
+# CACHE & SESSION STORE - In-memory data
+# ============================================================================
+# Redis: High-speed cache for sessions, tokens, and frequently accessed data
+#   Stores data in memory (lost on restart - that's OK for cache!)
+# ============================================================================
+
+  docker-redis:
+    #  Redis 7 Alpine: Ultra-fast in-memory cache (~60MB image)
+    # Used for: session storage, token caching, real-time data
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    
+    #  Enable Redis authentication (password required for connections)
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    
+    networks:
+      - app-network
+    
+    #  Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'      # Less powerful than DB (it's fast!)
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    #  Health check: Verify Redis is responding to commands
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
-  # ─── Services ────────────────────────────────────────────
+# ============================================================================
+# MICROSERVICES - Business logic layer
+# ============================================================================
+# Each service handles a specific business domain (user, posts, followers, feed)
+# They communicate with each other via HTTP over the internal network
+# External access through Gateway only (no direct access to services)
+# ============================================================================
 
-  user-service:
-    build: ./services/user-services
+  user-microservice:
+    #  User Service: Authentication, profiles, user management
+    # Port 8001: Internal service port (not exposed to internet)
+    
+    #  Build configuration
+    build:
+      context: .              # Project root directory
+      dockerfile: services/user-microservices/dockerfile
+    
     ports:
-      - "8000:8000"
+      - "8001:8001"           # Container:Host port mapping
+    
+    #  Environment variables (configure service behavior)
     environment:
+      - SECRET_KEY=${SECRET_KEY}                                          # For JWT signing
+      - JWT_ALGORITHM=${JWT_ALGORITHM}                                    # JWT algorithm
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@docker-user-db:5432/user_db
+      - REDIS_HOST=docker-redis                                           # Cache server
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}                                  # Cache auth
+    
+    networks:
+      - app-network           # Connect to internal network
+    
+    # 📁 Volume mounts (link local files to container)
+    volumes:
+      - ./shared_lib1/shared:/app/shared:ro     # Read-only shared library
+      - ./logs/user-microservice:/app/logs               # Log output directory
+    
+    # ⏳ Service dependencies (wait for these to be healthy first)
+    depends_on:
+      docker-user-db:
+        condition: service_healthy
+      docker-redis:
+        condition: service_healthy
+    
+    #  Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"       # Larger logs for services
+        max-file: "5"         # Keep more files
+    
+    #  Health check: Test if service is responding
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s           # Check every 30s (less frequent than DB)
+      timeout: 5s
+      retries: 3
+      start_period: 10s       # Grace period after startup
+
+  post-microservice:
+    # Post Service: Create, read, update, delete posts/content
+    # Port 8003: Internal service port
+    build:
+      context: .
+      dockerfile: services/post-microservices/dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}  # For service-to-service auth
       - SECRET_KEY=${SECRET_KEY}
       - JWT_ALGORITHM=${JWT_ALGORITHM}
-      - DATABASE_URL=postgresql://user:password@user-db:5432/userdb
-      - REDIS_HOST=redis
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@docker-post-db:5432/posts_db
+      - FOLLOW_SERVICE_URL=http://follower-microservice:8002  # Inter-service call
+      - REDIS_HOST=docker-redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    networks:
+      - app-network
+    volumes:
+      - ./shared_lib1/shared:/app/shared:ro
+      - ./logs/post-microservice:/app/logs
     depends_on:
-      - user-db
-      - redis
+      docker-post-db:
+        condition: service_healthy
+      docker-redis:
+        condition: service_healthy
+    #  Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
-  post-service:
-    build: ./services/post-services
-    ports:
-      - "8001:8001"
-    environment:
-      - SECRET_KEY=${SECRET_KEY}
-      - JWT_ALGORITHM=${JWT_ALGORITHM}
-      - DATABASE_URL=postgresql://user:password@post-db:5432/postdb
-      - USER_SERVICE_URL=http://user-service:8000
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    depends_on:
-      - post-db
-      - redis
-      - user-service
-
-  feed-service:
-    build: ./services/feed-services
+  follower-microservice:
+    #  Follower Service: Manage follow relationships between users
+    # Port 8002: Internal service port
+    build:
+      context: .
+      dockerfile: services/follower-microservice/dockerfile
     ports:
       - "8002:8002"
     environment:
       - SECRET_KEY=${SECRET_KEY}
-      - USER_SERVICE_URL=http://user-service:8000
-      - POST_SERVICE_URL=http://post-service:8001
-      - REDIS_HOST=redis
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - DATABASE_URL=postgresql://postgres:${DB_PASSWORD}@docker-follow-db:5432/follow_db
+      - REDIS_HOST=docker-redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    networks:
+      - app-network
+    volumes:
+      - ./shared_lib1/shared:/app/shared:ro
+      - ./logs/follower-microservice:/app/logs
     depends_on:
-      - redis
-      - user-service
-      - post-service
+      docker-follow-db:
+        condition: service_healthy
+      docker-redis:
+        condition: service_healthy
+    # 🔄 Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
+  feed-microservice:
+    # 📰 Feed Service: Aggregate and serve user feeds (personalized content)
+    # Port 8004: Internal service port
+    # Note: This service has no database (reads from other services' data)
+    build:
+      context: .
+      dockerfile: services/feed-microservices/dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - FOLLOW_SERVICE_URL=http://follower-microservice:8002  # Get followers
+      - POST_SERVICE_URL=http://post-microservice:8003        # Get posts
+      - REDIS_HOST=docker-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - CACHE_TTL=300                                                # Cache for 5 minutes
+    networks:
+      - app-network
+    volumes:
+      - ./shared_lib1/shared:/app/shared:ro
+      - ./logs/feed-microservice:/app/logs
+    depends_on:
+      docker-redis:
+        condition: service_healthy
+    # 🔄 Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+
+# ============================================================================
+# API GATEWAY - Single entry point for all client requests
+# ============================================================================
+# The Gateway is the ONLY service exposed to the public internet
+# It routes all incoming requests to appropriate microservices
+# ============================================================================
+
+  gateway:
+    # API Gateway: Single entry point for all requests
+    # Responsibilities:
+    #   - Route requests to correct microservice
+    #   - Authentication/authorization (JWT tokens)
+    #   - Rate limiting
+    #   - Request logging
+    # Port 8000: PUBLIC API port (exposed to internet)
+    
+    build:
+      context: .
+      dockerfile: gateway/dockerfile
+    ports:
+      - "8000:8000"           # Public API endpoint
+    
+    # 🔀 Routes to downstream microservices (via internal network)
+    environment:
+      - USER_SERVICE_URL=http://user-microservice:8001       # Use container names (DNS)
+      - POST_SERVICE_URL=http://post-microservice:8003
+      - FOLLOW_SERVICE_URL=http://follower-microservice:8002
+      - FEED_SERVICE_URL=http://feed-microservice:8004
+    
+    networks:
+      - app-network
+    
+    volumes:
+      - ./shared_lib1/shared:/app/shared:ro
+      - ./logs/gateway:/app/logs
+    
+    # ⏳ Wait for ALL microservices to be healthy before starting
+    # This ensures gateway won't start with unhealthy backend services
+    depends_on:
+      user-microservice:
+        condition: service_healthy
+      post-microservice:
+        condition: service_healthy
+      follower-microservice:
+        condition: service_healthy
+      feed-microservice:
+        condition: service_healthy
+    
+    #  Auto-restart: If container crashes, Docker restarts it automatically
+    restart: unless-stopped
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "5"
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+
+# ============================================================================
+# PERSISTENT STORAGE & NETWORKING
+# ============================================================================
+
+#  VOLUMES: Named volumes for database persistence
+# Data survives when containers are stopped/restarted
+# Stored on host machine at /var/lib/docker/volumes/
 volumes:
-  user-db-data:
-  post-db-data:
+  user-db-data:      # User service database storage
+  post-db-data:      # Post service database storage
+  follow-db-data:    # Follower service database storage
+
+#  NETWORKS: Docker networks for service communication
+# Bridge network: Allows containers to communicate by service name (DNS)
+# Isolation: Services NOT on this network can't communicate
+networks:
+  app-network:
+    driver: bridge   # Standard Docker network driver

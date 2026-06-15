@@ -1,13 +1,12 @@
 import os
 import requests
 from app.models.post_model import Post
-from app.redis_client import redis_client
+from shared.redis_client import redis_client
+from shared.logger import get_logger
 
 FOLLOW_SERVICE_URL = os.environ.get(
-    "FOLLOW_SERVICE_URL",
-    "http://follower-microservice:8003"
-)
-
+    "FOLLOW_SERVICE_URL")
+logger = get_logger("post-service")
 
 def _invalidate_follower_feeds(user_id: int):
     """
@@ -18,16 +17,32 @@ def _invalidate_follower_feeds(user_id: int):
     try:
         response = requests.get(
             f"{FOLLOW_SERVICE_URL}/follow/{user_id}/followers",
-            timeout=2  
+            timeout=2
         )
+
+        if response.status_code != 200:
+            print(f"Cache invalidation skipped: follower service returned "
+                  f"{response.status_code} — body: {response.text[:200]}")
+            return
+
         data = response.json()
         follower_ids = data.get("follower_ids", [])
 
-        for follower_id in follower_ids:
-            redis_client.delete(f"feed:user:{follower_id}")
+        if follower_ids:
+            for follower_id in follower_ids:
+                redis_client.delete(f"feed:user:{follower_id}")
+            print(f"Cache invalidated for {len(follower_ids)} followers of user {user_id}")
+        else:
+            print(f"No followers found for user {user_id} — nothing to invalidate")
 
     except Exception as e:
-        print(f"Cache invalidation failed: {e}")
+        logger.warning(
+            "Cache invalidation failed",
+            extra={
+                "error": str(e),
+                "user_id": user_id
+            }
+        )
 
 
 def create_post(post_data, user_id: int, db):
