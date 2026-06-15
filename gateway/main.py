@@ -1,13 +1,21 @@
 ﻿from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import Response
 import httpx
+from pathlib import Path
+import sys
+
+for parent in Path(__file__).resolve().parents:
+    shared_root = parent / "shared_lib1"
+    if shared_root.is_dir():
+        sys.path.insert(0, str(shared_root))
+        break
 
 from config import ROUTE_MAP
 
-from shared_lib.middleware import RequestIDMiddleware, ProcessTimeMiddleware
-from shared_lib.exceptions import register_exception_handlers
-from shared_lib.logger import setup_logger
-from shared_lib.rate_limit import RateLimiter
+from shared.middleware import RequestIDMiddleware, ProcessTimeMiddleware
+from shared.exceptions import register_exception_handlers
+from shared.logger import setup_logger
+from shared.rate_limit import RateLimiter
 
 logger = setup_logger(service_name="api-gateway")
 

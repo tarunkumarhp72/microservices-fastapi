@@ -87,4 +87,4 @@ def register_exception_handlers(app: FastAPI):
 
     @app.exception_handler(Exception)
     async def generic_exception_handler(request: Request, exc: Exception):
-        return _error_response(500, "Internal Server Error")
+        return _error_response(500, "Internal Server Error",str(exc))

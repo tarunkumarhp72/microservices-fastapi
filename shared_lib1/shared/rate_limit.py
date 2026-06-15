@@ -1,36 +1,4 @@
 
-"""
-shared_lib/rate_limit.py
-
-Redis-based Sliding Window Rate Limiter
-
-Kyon Rate Limiting chahiye?
-─────────────────────────────────────────────
-Imagine karo ek attacker ya bot hai jo ek second mein 1000 requests karta hai:
-  - Server overload ho sakta hai
-  - Database slow ho sakti hai
-  - Legitimate users affected ho sakte hain
-
-Rate limiting isko rok ta hai:
-  "Ek IP se max 100 requests/minute allow karo. Baad mein 429 do."
-
-Sliding Window Algorithm kya hai?
-─────────────────────────────────────────────
-Fixed Window (purana tarika):
-  Window: [10:00 - 10:01] → 100 req allowed
-  Problem: 10:00:59 par 100 req + 10:01:00 par 100 req = 200 req in 2 seconds!
-
-Sliding Window (hamare tarika):
-  Hamesha last 60 seconds dekho, chahe koi bhi timestamp ho.
-  10:00:59 par 100 req kiye → 10:01:01 tak block
-  Much fairer and more accurate!
-
-Redis mein kaise kaam karta hai?
-  - Ek sorted set banate hain key: "ratelimit:{ip}"
-  - Har request ka timestamp add karte hain
-  - Old timestamps (60 sec se purani) hatate hain
-  - Count karte hain → agar limit se zyada → 429 return karo
-"""
 
 import time
 import os
@@ -44,6 +12,7 @@ def _get_redis_client():
     return redis.Redis(
         host=os.environ.get("REDIS_HOST", "redis"),
         port=int(os.environ.get("REDIS_PORT", 6379)),
+        password=os.environ.get("REDIS_PASSWORD") or None,
         decode_responses=True
     )
 

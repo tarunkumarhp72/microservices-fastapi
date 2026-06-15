@@ -3,6 +3,9 @@ from fastapi import HTTPException, status
 from app.models.follower_model import Follow
 
 
+
+
+
 def follow_user(db: Session, follower_id: int, followed_id: int) -> dict:
     if follower_id == followed_id:
         raise HTTPException(

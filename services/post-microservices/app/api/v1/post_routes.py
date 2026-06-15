@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.post_schemas import PostCreate, PostResponse
+from shared.security import verify_internal_token   
 from app.services.post_services import (
     create_post,
     delete_post,
@@ -23,11 +24,14 @@ def create_new_post(
     return create_post(post, int(current_user["sub"]), db)
 
 
-@router.get("/bulk", response_model=list[PostResponse])
+@router.get(
+    "/bulk",
+    response_model=list[PostResponse],
+    dependencies=[Depends(verify_internal_token)]
+)
 def get_bulk_posts(
     user_ids: str = Query(..., description="Comma separated user IDs"),
     limit: int = Query(20, le=100),
-    # current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -41,12 +45,15 @@ def get_bulk_posts(
     return get_posts_by_user_ids(ids, limit, db)
 
 
-@router.get("/user/{user_id}", response_model=list[PostResponse])
+@router.get(
+    "/user/{user_id}",
+    response_model=list[PostResponse],
+    dependencies=[Depends(verify_internal_token)]
+)
 def user_posts(
     user_id: int,
     limit: int = Query(20, le=100),
     offset: int = Query(0),
-    # current_user=Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     return get_user_posts(user_id, db)

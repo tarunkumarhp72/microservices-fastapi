@@ -1,6 +1,7 @@
-fastapi
-uvicorn
-requests
-redis
-python-dotenv
-pydantic
+fastapi==0.116.1
+uvicorn==0.35.0
+gunicorn==23.0.0
+httpx==0.28.1
+redis==6.4.0
+python-dotenv==1.1.1
+pydantic==2.11.7

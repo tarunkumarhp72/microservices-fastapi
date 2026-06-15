@@ -5,9 +5,9 @@ router = APIRouter(prefix="/feed", tags=["Feed"])
 
 
 @router.get("/{user_id}")
-def get_feed(
+async def get_feed(
     user_id: int,
     limit: int = Query(20, le=100),   
     offset: int = Query(0)             
 ):
-    return generate_feed(user_id, limit=limit, offset=offset)
+    return await generate_feed(user_id, limit=limit, offset=offset)

@@ -1,7 +1,7 @@
 """add created_at to users remove follower model
 
 Revision ID: 67f141ac2709
-Revises: 76fb369f1f0f
+Revises: 254f6ecf6744
 Create Date: 2026-06-08 13:18:00.370225
 
 """
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '67f141ac2709'
-down_revision: Union[str, Sequence[str], None] = '76fb369f1f0f'
+down_revision: Union[str, Sequence[str], None] = '254f6ecf6744'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -9,17 +9,17 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.user_schema import UserCreate, LoginRequest, UserResponse
 from app.services.user_service import create_user, login_user
-from app.core.security import (
-    hash_password, verify_password,
-    create_access_token, create_refresh_token, decode_token,
-    ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS
-)
+from shared.exceptions import UnauthorizedException
+from shared.security import decode_token
+from app.auth.auth import get_current_user, create_access_token, create_refresh_token, REFRESH_TOKEN_EXPIRE_DAYS
+   
+
 from app.auth.auth import get_current_user
-from app.cache.redis_client import redis_client
+from shared.redis_client import redis_client
 
 # ── Shared lib imports ──────────────────────────────────────────────
-from shared_lib.rate_limit import strict_limiter, standard_limiter
-from shared_lib.logger import get_logger
+from shared.rate_limit import strict_limiter, standard_limiter
+from shared.logger import get_logger
 
 logger = get_logger("user-service")
 

@@ -1,21 +1,17 @@
-import sys
-from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(BASE_DIR))
 
 
 from fastapi import FastAPI
 
-from app.database import Base
-from app.database import engine
-from shared_lib.middleware import RequestIDMiddleware, ProcessTimeMiddleware
-from shared_lib.exceptions import register_exception_handlers
+from .database import Base
+from .database import ensure_user_schema
+from .database import engine
+from shared.middleware import RequestIDMiddleware, ProcessTimeMiddleware
+from shared.exceptions import register_exception_handlers
 
 
 from app.api.v1.user_routes import router as user_router
-from shared_lib.logger import setup_logger
-
+from shared.logger import setup_logger
+from app.models.user_model import User 
 
 logger = setup_logger(service_name="user-microservice")
 
@@ -34,9 +30,10 @@ register_exception_handlers(app)
 app.include_router(user_router)
 
 
-
+Base.metadata.create_all(bind=engine) 
 @app.on_event("startup")
 async def startup():
+    ensure_user_schema()
     logger.info("User service started", extra={"port": 8001})
  
  
@@ -47,8 +44,6 @@ async def shutdown():
 
 
 
-@app.get("/")
-def health_check():
-    return {
-        "status": "running"
-    }
+@app.get("/health")
+def health():
+    return {"status": "ok"}
