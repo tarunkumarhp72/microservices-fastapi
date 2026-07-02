@@ -42,7 +42,7 @@ ENV PYTHONPATH=/app \
 COPY --from=builder /root/.local /home/app/.local
 
 # 📁 Copy shared library and service code
-COPY shared_lib1/shared /app/shared
+COPY shared_lib/shared /app/shared
 COPY services/user-microservices/ /app/
 
 # 👤 Switch to non-root user

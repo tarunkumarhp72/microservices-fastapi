@@ -216,9 +216,9 @@ services:
     networks:
       - app-network           # Connect to internal network
     
-    # 📁 Volume mounts (link local files to container)
+    # Volume mounts (link local files to container)
     volumes:
-      - ./shared_lib1/shared:/app/shared:ro     # Read-only shared library
+      - ./shared_lib/shared:/app/shared:ro     # Read-only shared library
       - ./logs/user-microservice:/app/logs               # Log output directory
     
     # ⏳ Service dependencies (wait for these to be healthy first)
@@ -274,7 +274,7 @@ services:
     networks:
       - app-network
     volumes:
-      - ./shared_lib1/shared:/app/shared:ro
+      - ./shared_lib/shared:/app/shared:ro
       - ./logs/post-microservice:/app/logs
     depends_on:
       docker-post-db:
@@ -321,14 +321,14 @@ services:
     networks:
       - app-network
     volumes:
-      - ./shared_lib1/shared:/app/shared:ro
+      - ./shared_lib/shared:/app/shared:ro
       - ./logs/follower-microservice:/app/logs
     depends_on:
       docker-follow-db:
         condition: service_healthy
       docker-redis:
         condition: service_healthy
-    # 🔄 Auto-restart: If container crashes, Docker restarts it automatically
+    #  Auto-restart: If container crashes, Docker restarts it automatically
     restart: unless-stopped
     deploy:
       resources:
@@ -351,7 +351,7 @@ services:
       start_period: 10s
 
   feed-microservice:
-    # 📰 Feed Service: Aggregate and serve user feeds (personalized content)
+    #  Feed Service: Aggregate and serve user feeds (personalized content)
     # Port 8004: Internal service port
     # Note: This service has no database (reads from other services' data)
     build:
@@ -370,12 +370,12 @@ services:
     networks:
       - app-network
     volumes:
-      - ./shared_lib1/shared:/app/shared:ro
+      - ./shared_lib/shared:/app/shared:ro
       - ./logs/feed-microservice:/app/logs
     depends_on:
       docker-redis:
         condition: service_healthy
-    # 🔄 Auto-restart: If container crashes, Docker restarts it automatically
+    # Auto-restart: If container crashes, Docker restarts it automatically
     restart: unless-stopped
     deploy:
       resources:
@@ -420,7 +420,7 @@ services:
     ports:
       - "8000:8000"           # Public API endpoint
     
-    # 🔀 Routes to downstream microservices (via internal network)
+    # Routes to downstream microservices (via internal network)
     environment:
       - USER_SERVICE_URL=http://user-microservice:8001       # Use container names (DNS)
       - POST_SERVICE_URL=http://post-microservice:8003
@@ -431,10 +431,10 @@ services:
       - app-network
     
     volumes:
-      - ./shared_lib1/shared:/app/shared:ro
+      - ./shared_lib/shared:/app/shared:ro
       - ./logs/gateway:/app/logs
     
-    # ⏳ Wait for ALL microservices to be healthy before starting
+    # Wait for ALL microservices to be healthy before starting
     # This ensures gateway won't start with unhealthy backend services
     depends_on:
       user-microservice:
